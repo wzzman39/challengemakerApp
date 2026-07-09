@@ -34,11 +34,32 @@ import {
   LEVEL_UP_INCREMENT,
 } from "./lib/constants";
 import { todayISO, addDays, clamp, fmtDate, isDue, uid, grantExp } from "./lib/utils";
+import { LANGS, LOCALE_MAP, getInitialLang, saveLang, makeT, statName } from "./lib/i18n";
+
+/* ============================================================
+   ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА
+   ============================================================ */
+function LangSwitch({ lang, onChange }) {
+  return (
+    <div className="cm-lang-switch">
+      {LANGS.map((l) => (
+        <button
+          key={l}
+          className={"cm-lang-btn" + (lang === l ? " cm-lang-btn-active" : "")}
+          onClick={() => onChange(l)}
+          type="button"
+        >
+          {l.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /* ============================================================
    AUTH GATE
    ============================================================ */
-function AuthGate({ onAuthed }) {
+function AuthGate({ onAuthed, lang, setLang, t }) {
   const [mode, setMode] = useState("signin"); // signin | signup
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -54,7 +75,7 @@ function AuthGate({ onAuthed }) {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         if (!data.session) {
-          setMsg("Проверь почту — Supabase прислал письмо для подтверждения. После подтверждения зайди через 'Войти'.");
+          setMsg(t("auth_confirm_email"));
         } else {
           onAuthed(data.session.user);
         }
@@ -64,7 +85,7 @@ function AuthGate({ onAuthed }) {
         onAuthed(data.user);
       }
     } catch (err) {
-      setMsg(err.message || "Ошибка");
+      setMsg(err.message || "Error");
     } finally {
       setBusy(false);
     }
@@ -73,15 +94,18 @@ function AuthGate({ onAuthed }) {
   return (
     <div className="cm-root cm-auth">
       <div className="cm-header">
-        <div className="cm-header-title">
-          CHALLENGE<span>MAKER</span>
+        <div className="cm-header-title-row">
+          <div className="cm-header-title">
+            CHALLENGE<span>MAKER</span>
+          </div>
+          <LangSwitch lang={lang} onChange={setLang} />
         </div>
       </div>
       <form className="cm-auth-form" onSubmit={submit}>
         <input
           className="cm-input"
           type="email"
-          placeholder="email"
+          placeholder={t("auth_email")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -89,14 +113,14 @@ function AuthGate({ onAuthed }) {
         <input
           className="cm-input"
           type="password"
-          placeholder="пароль (мин. 6 симв.)"
+          placeholder={t("auth_password")}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           minLength={6}
           required
         />
         <button className="cm-btn cm-btn-ok cm-auth-submit" disabled={busy} type="submit">
-          {mode === "signin" ? "Войти" : "Создать аккаунт"}
+          {mode === "signin" ? t("auth_signin") : t("auth_signup")}
         </button>
         {msg && <div className="cm-auth-msg">{msg}</div>}
         <button
@@ -104,7 +128,7 @@ function AuthGate({ onAuthed }) {
           className="cm-auth-switch"
           onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
         >
-          {mode === "signin" ? "Нет аккаунта? Создать" : "Уже есть аккаунт? Войти"}
+          {mode === "signin" ? t("auth_switch_to_signup") : t("auth_switch_to_signin")}
         </button>
       </form>
     </div>
@@ -137,12 +161,12 @@ function Panel({ title, right, children }) {
   );
 }
 
-function StatSelect({ value, onChange }) {
+function StatSelect({ value, onChange, lang }) {
   return (
     <select className="cm-input cm-select" value={value} onChange={(e) => onChange(e.target.value)}>
       {STAT_KEYS.map((k) => (
         <option key={k} value={k}>
-          {STAT_META[k].label} — {STAT_META[k].full}
+          {STAT_META[k].label} — {statName(lang, k)}
         </option>
       ))}
     </select>
@@ -152,14 +176,14 @@ function StatSelect({ value, onChange }) {
 /* ============================================================
    ЭКРАН: HOME
    ============================================================ */
-function HomeScreen({ state }) {
+function HomeScreen({ state, t, lang }) {
   const { user, quests, challenges } = state;
   const todayQuests = quests.filter((q) => isDue(q.next_due));
   const activeChallenge = challenges.find((c) => c.status === "active");
 
   return (
     <div className="cm-screen">
-      <Panel title="УРОВЕНЬ">
+      <Panel title={t("panel_level")}>
         <div className="cm-level-row">
           <div className="cm-level-num">{user.level}</div>
           <div className="cm-level-bar-wrap">
@@ -171,14 +195,14 @@ function HomeScreen({ state }) {
         </div>
       </Panel>
 
-      <Panel title="CHAOS" right={<span className="cm-chaos-val">{user.chaos}/{user.chaos_max}</span>}>
+      <Panel title={t("panel_chaos")} right={<span className="cm-chaos-val">{user.chaos}/{user.chaos_max}</span>}>
         <ProgressBar value={user.chaos} max={user.chaos_max} color="var(--chaos)" height={12} />
         <div className="cm-chaos-caption">
-          {user.chaos < 25 ? "Ритм стабилен" : user.chaos < 60 ? "Система шатается" : "Расползается"}
+          {user.chaos < 25 ? t("chaos_stable") : user.chaos < 60 ? t("chaos_shaky") : t("chaos_chaotic")}
         </div>
       </Panel>
 
-      <Panel title="АКТИВНЫЙ ЧЕЛЛЕНДЖ">
+      <Panel title={t("panel_active_challenge")}>
         {activeChallenge ? (
           <div>
             <div className="cm-challenge-title">{activeChallenge.title}</div>
@@ -187,16 +211,16 @@ function HomeScreen({ state }) {
                 {STAT_META[activeChallenge.stat].label}
               </span>
               <span>+{activeChallenge.reward_exp} EXP</span>
-              <span>до {fmtDate(activeChallenge.due_date)}</span>
+              <span>{t("until")} {fmtDate(activeChallenge.due_date, LOCALE_MAP[lang])}</span>
             </div>
           </div>
         ) : (
-          <div className="cm-empty">Нет активного челленджа</div>
+          <div className="cm-empty">{t("no_active_challenge")}</div>
         )}
       </Panel>
 
-      <Panel title={`ЗАДАЧИ НА СЕГОДНЯ (${todayQuests.length})`}>
-        {todayQuests.length === 0 && <div className="cm-empty">Всё закрыто</div>}
+      <Panel title={`${t("panel_today_quests")} (${todayQuests.length})`}>
+        {todayQuests.length === 0 && <div className="cm-empty">{t("all_done")}</div>}
         {todayQuests.map((q) => (
           <div key={q.id} className="cm-mini-row">
             <span className="cm-dot" style={{ background: STAT_META[q.stat].color }} />
@@ -212,7 +236,7 @@ function HomeScreen({ state }) {
 /* ============================================================
    ФОРМА: НОВЫЙ КВЕСТ
    ============================================================ */
-function NewQuestForm({ onSubmit, onCancel }) {
+function NewQuestForm({ onSubmit, onCancel, t, lang }) {
   const [title, setTitle] = useState("");
   const [stat, setStat] = useState("DEX");
   const [expReward, setExpReward] = useState(15);
@@ -236,16 +260,16 @@ function NewQuestForm({ onSubmit, onCancel }) {
 
   return (
     <form className="cm-form" onSubmit={submit}>
-      <input className="cm-input" placeholder="Название" value={title} onChange={(e) => setTitle(e.target.value)} required />
-      <StatSelect value={stat} onChange={setStat} />
+      <input className="cm-input" placeholder={t("title_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} required />
+      <StatSelect value={stat} onChange={setStat} lang={lang} />
       <div className="cm-form-row">
-        <label>EXP <input className="cm-input cm-input-num" type="number" min={1} value={expReward} onChange={(e) => setExpReward(e.target.value)} /></label>
-        <label>CHAOS <input className="cm-input cm-input-num" type="number" min={0} value={chaosPenalty} onChange={(e) => setChaosPenalty(e.target.value)} /></label>
-        <label>раз в, дн <input className="cm-input cm-input-num" type="number" min={1} value={intervalDays} onChange={(e) => setIntervalDays(e.target.value)} /></label>
+        <label>{t("form_exp")} <input className="cm-input cm-input-num" type="number" min={1} value={expReward} onChange={(e) => setExpReward(e.target.value)} /></label>
+        <label>{t("form_chaos")} <input className="cm-input cm-input-num" type="number" min={0} value={chaosPenalty} onChange={(e) => setChaosPenalty(e.target.value)} /></label>
+        <label>{t("form_interval_days")} <input className="cm-input cm-input-num" type="number" min={1} value={intervalDays} onChange={(e) => setIntervalDays(e.target.value)} /></label>
       </div>
       <div className="cm-actions">
-        <button className="cm-btn cm-btn-ok" type="submit">Добавить</button>
-        <button className="cm-btn cm-btn-neutral" type="button" onClick={onCancel}>Отмена</button>
+        <button className="cm-btn cm-btn-ok" type="submit">{t("form_add")}</button>
+        <button className="cm-btn cm-btn-neutral" type="button" onClick={onCancel}>{t("form_cancel")}</button>
       </div>
     </form>
   );
@@ -254,18 +278,20 @@ function NewQuestForm({ onSubmit, onCancel }) {
 /* ============================================================
    ЭКРАН: QUESTS
    ============================================================ */
-function QuestsScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelete }) {
+function QuestsScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelete, t, lang }) {
   const [showForm, setShowForm] = useState(false);
 
   return (
     <div className="cm-screen">
       {!showForm && (
         <button className="cm-btn cm-btn-add" onClick={() => setShowForm(true)}>
-          <Plus size={14} /> Новый квест
+          <Plus size={14} /> {t("new_quest")}
         </button>
       )}
       {showForm && (
         <NewQuestForm
+          t={t}
+          lang={lang}
           onCancel={() => setShowForm(false)}
           onSubmit={(q) => {
             onAdd(q);
@@ -282,27 +308,27 @@ function QuestsScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelete }
             <div className="cm-card-top">
               <span className="cm-dot" style={{ background: STAT_META[q.stat].color }} />
               <div className="cm-card-title">{q.title}</div>
-              <span className={"cm-status cm-status-" + displayStatus}>{displayStatus}</span>
-              <button className="cm-icon-btn" title="Удалить" onClick={() => window.confirm(`Удалить квест «${q.title}»?`) && onDelete(q.id)}>
+              <span className={"cm-status cm-status-" + displayStatus}>{t("status_" + displayStatus)}</span>
+              <button className="cm-icon-btn" title={t("form_cancel")} onClick={() => window.confirm(t("confirm_delete_quest", q.title)) && onDelete(q.id)}>
                 <Trash2 size={14} />
               </button>
             </div>
             <div className="cm-row-meta">
               <span style={{ color: STAT_META[q.stat].color }}>{STAT_META[q.stat].label}</span>
               <span>+{q.exp_reward} EXP</span>
-              <span>−{q.chaos_penalty} при провале</span>
-              <span>раз в {q.interval_days} дн.</span>
-              <span>{due ? "доступен сегодня" : `след. цикл ${fmtDate(q.next_due)}`}</span>
+              <span>−{q.chaos_penalty} {t("on_fail_prefix")}</span>
+              <span>{q.interval_days} {t("interval_suffix")}</span>
+              <span>{due ? t("available_today") : `${t("next_cycle")} ${fmtDate(q.next_due, LOCALE_MAP[lang])}`}</span>
             </div>
             <div className="cm-actions">
               <button className="cm-btn cm-btn-ok" disabled={!due} onClick={() => onComplete(q.id)}>
-                <Check size={14} /> Выполнено
+                <Check size={14} /> {t("q_complete")}
               </button>
               <button className="cm-btn cm-btn-fail" disabled={!due} onClick={() => onFail(q.id)}>
-                <X size={14} /> Провалено
+                <X size={14} /> {t("q_fail")}
               </button>
               <button className="cm-btn cm-btn-neutral" disabled={!due} onClick={() => onPostpone(q.id)}>
-                <Clock size={14} /> Отложить
+                <Clock size={14} /> {t("q_postpone")}
               </button>
             </div>
           </div>
@@ -315,7 +341,7 @@ function QuestsScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelete }
 /* ============================================================
    ФОРМА: НОВЫЙ ЧЕЛЛЕНДЖ
    ============================================================ */
-function NewChallengeForm({ onSubmit, onCancel }) {
+function NewChallengeForm({ onSubmit, onCancel, t, lang }) {
   const [title, setTitle] = useState("");
   const [stat, setStat] = useState("DEX");
   const [rewardExp, setRewardExp] = useState(30);
@@ -339,16 +365,16 @@ function NewChallengeForm({ onSubmit, onCancel }) {
 
   return (
     <form className="cm-form" onSubmit={submit}>
-      <input className="cm-input" placeholder="Название" value={title} onChange={(e) => setTitle(e.target.value)} required />
-      <StatSelect value={stat} onChange={setStat} />
+      <input className="cm-input" placeholder={t("title_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} required />
+      <StatSelect value={stat} onChange={setStat} lang={lang} />
       <div className="cm-form-row">
-        <label>EXP <input className="cm-input cm-input-num" type="number" min={1} value={rewardExp} onChange={(e) => setRewardExp(e.target.value)} /></label>
-        <label>CHAOS <input className="cm-input cm-input-num" type="number" min={0} value={penaltyChaos} onChange={(e) => setPenaltyChaos(e.target.value)} /></label>
-        <label>срок, дн <input className="cm-input cm-input-num" type="number" min={1} value={dueInDays} onChange={(e) => setDueInDays(e.target.value)} /></label>
+        <label>{t("form_exp")} <input className="cm-input cm-input-num" type="number" min={1} value={rewardExp} onChange={(e) => setRewardExp(e.target.value)} /></label>
+        <label>{t("form_chaos")} <input className="cm-input cm-input-num" type="number" min={0} value={penaltyChaos} onChange={(e) => setPenaltyChaos(e.target.value)} /></label>
+        <label>{t("form_due_days")} <input className="cm-input cm-input-num" type="number" min={1} value={dueInDays} onChange={(e) => setDueInDays(e.target.value)} /></label>
       </div>
       <div className="cm-actions">
-        <button className="cm-btn cm-btn-ok" type="submit">Добавить</button>
-        <button className="cm-btn cm-btn-neutral" type="button" onClick={onCancel}>Отмена</button>
+        <button className="cm-btn cm-btn-ok" type="submit">{t("form_add")}</button>
+        <button className="cm-btn cm-btn-neutral" type="button" onClick={onCancel}>{t("form_cancel")}</button>
       </div>
     </form>
   );
@@ -357,7 +383,7 @@ function NewChallengeForm({ onSubmit, onCancel }) {
 /* ============================================================
    ЭКРАН: CHALLENGE
    ============================================================ */
-function ChallengeScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelete }) {
+function ChallengeScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelete, t, lang }) {
   const [showForm, setShowForm] = useState(false);
   const active = state.challenges.find((c) => c.status === "active");
   const queue = state.challenges.filter((c) => c.status === "pending");
@@ -366,11 +392,13 @@ function ChallengeScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelet
     <div className="cm-screen">
       {!showForm && (
         <button className="cm-btn cm-btn-add" onClick={() => setShowForm(true)}>
-          <Plus size={14} /> Новый челлендж
+          <Plus size={14} /> {t("new_challenge")}
         </button>
       )}
       {showForm && (
         <NewChallengeForm
+          t={t}
+          lang={lang}
           onCancel={() => setShowForm(false)}
           onSubmit={(c) => {
             onAdd(c, !active);
@@ -379,49 +407,49 @@ function ChallengeScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelet
         />
       )}
 
-      <Panel title="ТЕКУЩИЙ">
+      <Panel title={t("current")}>
         {active ? (
           <div className="cm-card cm-card-flat">
             <div className="cm-card-top">
               <span className="cm-dot" style={{ background: STAT_META[active.stat].color }} />
               <div className="cm-card-title">{active.title}</div>
-              <button className="cm-icon-btn" title="Удалить" onClick={() => window.confirm(`Удалить челлендж «${active.title}»?`) && onDelete(active.id)}>
+              <button className="cm-icon-btn" title={t("form_cancel")} onClick={() => window.confirm(t("confirm_delete_challenge", active.title)) && onDelete(active.id)}>
                 <Trash2 size={14} />
               </button>
             </div>
             <div className="cm-desc">{active.description}</div>
             <div className="cm-row-meta">
               <span style={{ color: STAT_META[active.stat].color }}>{STAT_META[active.stat].label}</span>
-              <span>Награда: +{active.reward_exp} EXP</span>
-              <span>Штраф: +{active.penalty_chaos} CHAOS</span>
-              <span>Срок: {fmtDate(active.due_date)}</span>
-              {active.postponed && <span>уже откладывался</span>}
+              <span>{t("reward_label")} +{active.reward_exp} EXP</span>
+              <span>{t("penalty_label")} +{active.penalty_chaos} CHAOS</span>
+              <span>{t("due_label")} {fmtDate(active.due_date, LOCALE_MAP[lang])}</span>
+              {active.postponed && <span>{t("already_postponed")}</span>}
             </div>
             <div className="cm-actions">
               <button className="cm-btn cm-btn-ok" onClick={() => onComplete(active.id)}>
-                <Check size={14} /> Выполнено
+                <Check size={14} /> {t("q_complete")}
               </button>
               <button className="cm-btn cm-btn-fail" onClick={() => onFail(active.id)}>
-                <X size={14} /> Провалено
+                <X size={14} /> {t("q_fail")}
               </button>
               <button className="cm-btn cm-btn-neutral" disabled={active.postponed} onClick={() => onPostpone(active.id)}>
-                <Clock size={14} /> Отложить
+                <Clock size={14} /> {t("q_postpone")}
               </button>
             </div>
           </div>
         ) : (
-          <div className="cm-empty">Нет активного челленджа — очередь пуста</div>
+          <div className="cm-empty">{t("no_active_queue")}</div>
         )}
       </Panel>
 
       {queue.length > 0 && (
-        <Panel title={`В ОЧЕРЕДИ (${queue.length})`}>
+        <Panel title={`${t("queue_label")} (${queue.length})`}>
           {queue.map((c) => (
             <div key={c.id} className="cm-mini-row">
               <span className="cm-dot" style={{ background: STAT_META[c.stat].color }} />
               <span className="cm-mini-title">{c.title}</span>
               <span className="cm-mini-reward">+{c.reward_exp}</span>
-              <button className="cm-icon-btn" title="Удалить" onClick={() => window.confirm(`Удалить челлендж «${c.title}»?`) && onDelete(c.id)}>
+              <button className="cm-icon-btn" title={t("form_cancel")} onClick={() => window.confirm(t("confirm_delete_challenge", c.title)) && onDelete(c.id)}>
                 <Trash2 size={13} />
               </button>
             </div>
@@ -435,14 +463,14 @@ function ChallengeScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelet
 /* ============================================================
    ЭКРАН: STATS
    ============================================================ */
-function StatsScreen({ state }) {
+function StatsScreen({ state, t, lang }) {
   return (
     <div className="cm-screen">
       {STAT_KEYS.map((key) => {
         const s = state.stats[key];
         if (!s) return null;
         return (
-          <Panel key={key} title={`${STAT_META[key].label} — ${STAT_META[key].full}`} right={<span className="cm-stat-lvl">Ур. {s.value}</span>}>
+          <Panel key={key} title={`${STAT_META[key].label} — ${statName(lang, key)}`} right={<span className="cm-stat-lvl">{t("lvl_short")} {s.value}</span>}>
             <ProgressBar value={s.exp} max={s.next_level_exp} color={STAT_META[key].color} height={10} />
             <div className="cm-level-caption">{s.exp} / {s.next_level_exp} EXP</div>
           </Panel>
@@ -455,14 +483,14 @@ function StatsScreen({ state }) {
 /* ============================================================
    ЭКРАН: HISTORY
    ============================================================ */
-function HistoryScreen({ state }) {
+function HistoryScreen({ state, t, lang }) {
   const sorted = [...state.history].sort((a, b) => (a.ts < b.ts ? 1 : -1));
   return (
     <div className="cm-screen">
-      {sorted.length === 0 && <div className="cm-empty">История пуста</div>}
+      {sorted.length === 0 && <div className="cm-empty">{t("history_empty")}</div>}
       {sorted.map((h) => (
         <div key={h.id} className="cm-hist-row">
-          <div className="cm-hist-date">{fmtDate(h.ts)}</div>
+          <div className="cm-hist-date">{fmtDate(h.ts, LOCALE_MAP[lang])}</div>
           <div className="cm-hist-body">
             <div className="cm-hist-title">{h.title}</div>
             <div className="cm-row-meta">
@@ -499,11 +527,19 @@ const TABS = [
 ];
 
 export default function App() {
+  const [lang, setLangState] = useState(getInitialLang());
   const [authUser, setAuthUser] = useState(undefined); // undefined = ещё проверяем сессию
   const [tab, setTab] = useState("home");
   const [state, setState] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [toast, setToast] = useState(null);
+
+  const t = useCallback(makeT(lang), [lang]);
+
+  const setLang = useCallback((l) => {
+    setLangState(l);
+    saveLang(l);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setAuthUser(data.session?.user ?? null));
@@ -527,8 +563,8 @@ export default function App() {
   }, []);
 
   const reportError = useCallback(
-    (e) => showToast("Не сохранилось: " + (e.message || "ошибка сети"), "fail"),
-    [showToast]
+    (e) => showToast(t("toast_save_error") + " " + (e.message || "network error"), "fail"),
+    [showToast, t]
   );
 
   const pushHistoryLocal = useCallback((entry) => {
@@ -579,8 +615,8 @@ export default function App() {
     setState((prev) => ({ ...prev, quests: prev.quests.map((x) => (x.id === id ? { ...x, status: "failed", next_due: nextDue } : x)) }));
     persistQuest(id, { status: "failed", next_due: nextDue }).catch(reportError);
     pushHistoryLocal({ type: "quest_failed", title: q.title, exp_delta: 0, chaos_delta: q.chaos_penalty, stat: q.stat });
-    showToast(`${q.title}: провал, +${q.chaos_penalty} CHAOS`, "fail");
-  }, [state, applyChaosAndPersist, pushHistoryLocal, showToast, reportError]);
+    showToast(`${q.title}: ${t("toast_fail")}, +${q.chaos_penalty} CHAOS`, "fail");
+  }, [state, applyChaosAndPersist, pushHistoryLocal, showToast, reportError, t]);
 
   const postponeQuest = useCallback((id) => {
     const q = state.quests.find((x) => x.id === id);
@@ -589,18 +625,18 @@ export default function App() {
     setState((prev) => ({ ...prev, quests: prev.quests.map((x) => (x.id === id ? { ...x, next_due: nextDue } : x)) }));
     persistQuest(id, { next_due: nextDue }).catch(reportError);
     pushHistoryLocal({ type: "quest_postponed", title: q.title, exp_delta: 0, chaos_delta: 0, stat: q.stat });
-    showToast(`${q.title}: отложено на 1 день`, "neutral");
-  }, [state, pushHistoryLocal, showToast, reportError]);
+    showToast(`${q.title}: ${t("toast_postponed")}`, "neutral");
+  }, [state, pushHistoryLocal, showToast, reportError, t]);
 
   const addQuest = useCallback(async (draft) => {
     try {
       const row = await insertQuestRow({ ...draft, user_id: authUser.id });
       setState((prev) => ({ ...prev, quests: [...prev.quests, row] }));
-      showToast(`Добавлен квест: ${row.title}`, "ok");
+      showToast(`${t("toast_added_quest")} ${row.title}`, "ok");
     } catch (e) {
       reportError(e);
     }
-  }, [authUser, showToast, reportError]);
+  }, [authUser, showToast, reportError, t]);
 
   const deleteQuest = useCallback(async (id) => {
     setState((prev) => ({ ...prev, quests: prev.quests.filter((x) => x.id !== id) }));
@@ -648,8 +684,8 @@ export default function App() {
     persistChallenge(id, { status: "failed" }).catch(reportError);
     if (before) persistChallenge(before.id, { status: "active" }).catch(reportError);
     pushHistoryLocal({ type: "challenge_failed", title: c.title, exp_delta: 0, chaos_delta: c.penalty_chaos, stat: c.stat });
-    showToast(`${c.title}: провал, +${c.penalty_chaos} CHAOS`, "fail");
-  }, [state, applyChaosAndPersist, pushHistoryLocal, showToast, reportError]);
+    showToast(`${c.title}: ${t("toast_fail")}, +${c.penalty_chaos} CHAOS`, "fail");
+  }, [state, applyChaosAndPersist, pushHistoryLocal, showToast, reportError, t]);
 
   const postponeChallenge = useCallback((id) => {
     const c = state.challenges.find((x) => x.id === id);
@@ -658,18 +694,18 @@ export default function App() {
     setState((prev) => ({ ...prev, challenges: prev.challenges.map((x) => (x.id === id ? { ...x, due_date: dueDate, postponed: true } : x)) }));
     persistChallenge(id, { due_date: dueDate, postponed: true }).catch(reportError);
     pushHistoryLocal({ type: "challenge_postponed", title: c.title, exp_delta: 0, chaos_delta: 0, stat: c.stat });
-    showToast(`${c.title}: отложено на 1 день`, "neutral");
-  }, [state, pushHistoryLocal, showToast, reportError]);
+    showToast(`${c.title}: ${t("toast_postponed")}`, "neutral");
+  }, [state, pushHistoryLocal, showToast, reportError, t]);
 
   const addChallenge = useCallback(async (draft, makeActive) => {
     try {
       const row = await insertChallengeRow({ ...draft, user_id: authUser.id, status: makeActive ? "active" : "pending" });
       setState((prev) => ({ ...prev, challenges: [...prev.challenges, row] }));
-      showToast(`Добавлен челлендж: ${row.title}`, "ok");
+      showToast(`${t("toast_added_challenge")} ${row.title}`, "ok");
     } catch (e) {
       reportError(e);
     }
-  }, [authUser, showToast, reportError]);
+  }, [authUser, showToast, reportError, t]);
 
   const deleteChallenge = useCallback(async (id) => {
     setState((prev) => ({ ...prev, challenges: prev.challenges.filter((x) => x.id !== id) }));
@@ -687,19 +723,19 @@ export default function App() {
     return (
       <div className="cm-root cm-loading">
         <Flame className="cm-loading-icon" size={28} />
-        <div>Проверка сессии...</div>
+        <div>{t("checking_session")}</div>
       </div>
     );
   }
 
   if (!authUser) {
-    return <AuthGate onAuthed={setAuthUser} />;
+    return <AuthGate onAuthed={setAuthUser} lang={lang} setLang={setLang} t={t} />;
   }
 
   if (loadErr) {
     return (
       <div className="cm-root cm-loading">
-        <div>Ошибка загрузки: {loadErr}</div>
+        <div>{t("load_error")} {loadErr}</div>
       </div>
     );
   }
@@ -708,7 +744,7 @@ export default function App() {
     return (
       <div className="cm-root cm-loading">
         <Flame className="cm-loading-icon" size={28} />
-        <div>Загрузка данных...</div>
+        <div>{t("loading_data")}</div>
       </div>
     );
   }
@@ -716,36 +752,39 @@ export default function App() {
   return (
     <div className="cm-root">
       <div className="cm-header">
-        <div className="cm-header-title">
-          CHALLENGE<span>MAKER</span>
+        <div className="cm-header-title-row">
+          <div className="cm-header-title">
+            CHALLENGE<span>MAKER</span>
+          </div>
+          <LangSwitch lang={lang} onChange={setLang} />
         </div>
         <div className="cm-header-sub-row">
-          <div className="cm-header-sub">{state.user.name} · Ур. {state.user.level}</div>
-          <button className="cm-icon-btn" title="Выйти" onClick={signOut}>
+          <div className="cm-header-sub">{state.user.name} · {t("lvl_short")} {state.user.level}</div>
+          <button className="cm-icon-btn" title={t("sign_out")} onClick={signOut}>
             <LogOut size={14} />
           </button>
         </div>
       </div>
 
       <div className="cm-body">
-        {tab === "home" && <HomeScreen state={state} />}
+        {tab === "home" && <HomeScreen state={state} t={t} lang={lang} />}
         {tab === "quests" && (
-          <QuestsScreen state={state} onComplete={completeQuest} onFail={failQuest} onPostpone={postponeQuest} onAdd={addQuest} onDelete={deleteQuest} />
+          <QuestsScreen state={state} onComplete={completeQuest} onFail={failQuest} onPostpone={postponeQuest} onAdd={addQuest} onDelete={deleteQuest} t={t} lang={lang} />
         )}
         {tab === "challenge" && (
-          <ChallengeScreen state={state} onComplete={completeChallenge} onFail={failChallenge} onPostpone={postponeChallenge} onAdd={addChallenge} onDelete={deleteChallenge} />
+          <ChallengeScreen state={state} onComplete={completeChallenge} onFail={failChallenge} onPostpone={postponeChallenge} onAdd={addChallenge} onDelete={deleteChallenge} t={t} lang={lang} />
         )}
-        {tab === "stats" && <StatsScreen state={state} />}
-        {tab === "history" && <HistoryScreen state={state} />}
+        {tab === "stats" && <StatsScreen state={state} t={t} lang={lang} />}
+        {tab === "history" && <HistoryScreen state={state} t={t} lang={lang} />}
       </div>
 
       <div className="cm-tabbar">
-        {TABS.map((t) => {
-          const Icon = t.icon;
+        {TABS.map((tb) => {
+          const Icon = tb.icon;
           return (
-            <button key={t.id} className={"cm-tab" + (tab === t.id ? " cm-tab-active" : "")} onClick={() => setTab(t.id)}>
+            <button key={tb.id} className={"cm-tab" + (tab === tb.id ? " cm-tab-active" : "")} onClick={() => setTab(tb.id)}>
               <Icon size={18} />
-              <span>{t.label}</span>
+              <span>{tb.label}</span>
             </button>
           );
         })}

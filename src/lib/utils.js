@@ -8,9 +8,9 @@ export const addDays = (isoDate, days) => {
 
 export const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
-export const fmtDate = (iso) => {
+export const fmtDate = (iso, locale = "ru-RU") => {
   const d = new Date(iso);
-  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString(locale, { day: "2-digit", month: "2-digit" });
 };
 
 export const isDue = (nextDue) => nextDue <= todayISO();

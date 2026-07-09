@@ -73,6 +73,11 @@ body {
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #171A23 0%, #0B0D12 100%);
 }
+.cm-header-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 .cm-header-title {
   font-family: 'Space Grotesk', sans-serif;
   font-weight: 700;
@@ -80,6 +85,24 @@ body {
   letter-spacing: 0.5px;
 }
 .cm-header-title span { color: var(--xp); }
+
+.cm-lang-switch {
+  display: flex;
+  gap: 4px;
+}
+.cm-lang-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.cm-lang-btn:hover { color: var(--text); }
+.cm-lang-btn-active { color: var(--xp); border-color: var(--xp); }
+
 .cm-header-sub-row {
   display: flex;
   align-items: center;
