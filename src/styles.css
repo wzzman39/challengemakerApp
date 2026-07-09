@@ -2,13 +2,18 @@
 
 * { box-sizing: border-box; }
 
-body {
+html, body {
   margin: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
   background: #05060a;
   display: flex;
   justify-content: center;
   padding: 24px 12px;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .cm-root {
@@ -31,8 +36,25 @@ body {
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  min-height: 640px;
+  height: min(100dvh - 48px, 800px);
   position: relative;
+}
+
+/* На узких экранах (реальный телефон, не превью) — во весь экран, без рамки и отступов */
+@media (max-width: 480px) {
+  body { padding: 0; }
+  .cm-root {
+    max-width: 100%;
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
+  .cm-tabbar {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .cm-header {
+    padding-top: max(18px, env(safe-area-inset-top));
+  }
 }
 
 .cm-loading, .cm-auth {
