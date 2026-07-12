@@ -12,6 +12,8 @@ import {
   Plus,
   Trash2,
   LogOut,
+  Download,
+  Settings,
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import {
@@ -35,6 +37,8 @@ import {
 } from "./lib/constants";
 import { todayISO, addDays, clamp, fmtDate, isDue, uid, grantExp } from "./lib/utils";
 import { LANGS, LOCALE_MAP, getInitialLang, saveLang, makeT, statName } from "./lib/i18n";
+import { pickRandomTemplate } from "./lib/challengeTemplates";
+import { THEMES, getInitialTheme, saveTheme } from "./lib/theme";
 
 /* ============================================================
    ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА
@@ -59,12 +63,13 @@ function LangSwitch({ lang, onChange }) {
 /* ============================================================
    AUTH GATE
    ============================================================ */
-function AuthGate({ onAuthed, lang, setLang, t }) {
+function AuthGate({ onAuthed, lang, setLang, t, theme, setTheme }) {
   const [mode, setMode] = useState("signin"); // signin | signup
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -92,13 +97,15 @@ function AuthGate({ onAuthed, lang, setLang, t }) {
   };
 
   return (
-    <div className="cm-root cm-auth">
+    <div className="cm-root cm-auth" data-theme={theme}>
       <div className="cm-header">
         <div className="cm-header-title-row">
           <div className="cm-header-title">
             CHALLENGE<span>MAKER</span>
           </div>
-          <LangSwitch lang={lang} onChange={setLang} />
+          <button className="cm-icon-btn" title={t("settings")} onClick={() => setSettingsOpen(true)}>
+            <Settings size={16} />
+          </button>
         </div>
       </div>
       <form className="cm-auth-form" onSubmit={submit}>
@@ -131,6 +138,62 @@ function AuthGate({ onAuthed, lang, setLang, t }) {
           {mode === "signin" ? t("auth_switch_to_signup") : t("auth_switch_to_signin")}
         </button>
       </form>
+
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        setTheme={setTheme}
+        lang={lang}
+        setLang={setLang}
+        t={t}
+      />
+    </div>
+  );
+}
+
+function SettingsSheet({ open, onClose, theme, setTheme, lang, setLang, t, installPrompt, triggerInstall, signOut }) {
+  if (!open) return null;
+  return (
+    <div className="cm-modal-backdrop" onClick={onClose}>
+      <div className="cm-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="cm-modal-close" onClick={onClose} aria-label={t("form_cancel")}>
+          <X size={16} />
+        </button>
+        <div className="cm-modal-title">{t("settings")}</div>
+
+        <div className="cm-settings-label">{t("theme")}</div>
+        <div className="cm-theme-picker">
+          {THEMES.map((th) => (
+            <button
+              key={th.id}
+              className={"cm-theme-swatch" + (theme === th.id ? " cm-theme-swatch-active" : "")}
+              onClick={() => setTheme(th.id)}
+            >
+              <span className="cm-swatch-dot" style={{ background: th.swatch }} />
+              {t("theme_" + th.id)}
+            </button>
+          ))}
+        </div>
+
+        <div className="cm-settings-label">{t("language")}</div>
+        <LangSwitch lang={lang} onChange={setLang} />
+
+        {(installPrompt || signOut) && (
+          <div className="cm-modal-actions">
+            {installPrompt && (
+              <button className="cm-btn cm-btn-neutral" onClick={triggerInstall}>
+                <Download size={14} /> {t("install_app")}
+              </button>
+            )}
+            {signOut && (
+              <button className="cm-btn cm-btn-fail" onClick={signOut}>
+                <LogOut size={14} /> {t("sign_out")}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -138,8 +201,17 @@ function AuthGate({ onAuthed, lang, setLang, t }) {
 /* ============================================================
    UI ПРИМИТИВЫ
    ============================================================ */
-function ProgressBar({ value, max, color, height = 10, glow = false }) {
+function ProgressBar({ value, max, color, height = 10, glow = false, theme }) {
   const pct = clamp((value / max) * 100, 0, 100);
+  if (theme === "terminal") {
+    const total = 18;
+    const filled = Math.round((pct / 100) * total);
+    return (
+      <div className="cm-ascii-bar">
+        [{"█".repeat(filled)}{"░".repeat(total - filled)}]
+      </div>
+    );
+  }
   return (
     <div className="cm-track" style={{ height }}>
       <div className={"cm-fill" + (glow ? " cm-fill-glow" : "")} style={{ width: pct + "%", background: color }} />
@@ -176,7 +248,7 @@ function StatSelect({ value, onChange, lang }) {
 /* ============================================================
    ЭКРАН: HOME
    ============================================================ */
-function HomeScreen({ state, t, lang }) {
+function HomeScreen({ state, t, lang, theme }) {
   const { user, quests, challenges } = state;
   const todayQuests = quests.filter((q) => isDue(q.next_due));
   const activeChallenge = challenges.find((c) => c.status === "active");
@@ -187,7 +259,7 @@ function HomeScreen({ state, t, lang }) {
         <div className="cm-level-row">
           <div className="cm-level-num">{user.level}</div>
           <div className="cm-level-bar-wrap">
-            <ProgressBar value={user.exp} max={user.next_level_exp} color="var(--xp)" glow />
+            <ProgressBar value={user.exp} max={user.next_level_exp} color="var(--xp)" glow theme={theme} />
             <div className="cm-level-caption">
               {Number(user.exp).toFixed(1)} / {user.next_level_exp} EXP
             </div>
@@ -196,7 +268,7 @@ function HomeScreen({ state, t, lang }) {
       </Panel>
 
       <Panel title={t("panel_chaos")} right={<span className="cm-chaos-val">{user.chaos}/{user.chaos_max}</span>}>
-        <ProgressBar value={user.chaos} max={user.chaos_max} color="var(--chaos)" height={12} />
+        <ProgressBar value={user.chaos} max={user.chaos_max} color="var(--chaos)" height={12} theme={theme} />
         <div className="cm-chaos-caption">
           {user.chaos < 25 ? t("chaos_stable") : user.chaos < 60 ? t("chaos_shaky") : t("chaos_chaotic")}
         </div>
@@ -365,7 +437,22 @@ function NewChallengeForm({ onSubmit, onCancel, t, lang }) {
 
   return (
     <form className="cm-form" onSubmit={submit}>
-      <input className="cm-input" placeholder={t("title_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} required />
+      <div className="cm-form-top">
+        <input className="cm-input" placeholder={t("title_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <button
+          type="button"
+          className="cm-btn cm-btn-neutral cm-btn-randomize"
+          onClick={() => {
+            const tpl = pickRandomTemplate(lang);
+            setTitle(tpl.title);
+            setStat(tpl.stat);
+            setRewardExp(tpl.reward_exp);
+            setPenaltyChaos(tpl.penalty_chaos);
+          }}
+        >
+          {t("randomize")}
+        </button>
+      </div>
       <StatSelect value={stat} onChange={setStat} lang={lang} />
       <div className="cm-form-row">
         <label>{t("form_exp")} <input className="cm-input cm-input-num" type="number" min={1} value={rewardExp} onChange={(e) => setRewardExp(e.target.value)} /></label>
@@ -391,9 +478,32 @@ function ChallengeScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelet
   return (
     <div className="cm-screen">
       {!showForm && (
-        <button className="cm-btn cm-btn-add" onClick={() => setShowForm(true)}>
-          <Plus size={14} /> {t("new_challenge")}
-        </button>
+        <div className="cm-challenge-toolbar">
+          <button
+            className="cm-btn cm-btn-add"
+            onClick={() => {
+              const tpl = pickRandomTemplate(lang);
+              onAdd(
+                {
+                  title: tpl.title,
+                  description: "",
+                  stat: tpl.stat,
+                  reward_exp: tpl.reward_exp,
+                  penalty_chaos: tpl.penalty_chaos,
+                  due_date: addDays(todayISO(), 2),
+                  can_postpone: true,
+                  postponed: false,
+                },
+                !active
+              );
+            }}
+          >
+            {t("summon_challenge")}
+          </button>
+          <button className="cm-btn cm-btn-add" onClick={() => setShowForm(true)}>
+            <Plus size={14} /> {t("new_challenge")}
+          </button>
+        </div>
       )}
       {showForm && (
         <NewChallengeForm
@@ -463,7 +573,7 @@ function ChallengeScreen({ state, onComplete, onFail, onPostpone, onAdd, onDelet
 /* ============================================================
    ЭКРАН: STATS
    ============================================================ */
-function StatsScreen({ state, t, lang }) {
+function StatsScreen({ state, t, lang, theme }) {
   return (
     <div className="cm-screen">
       {STAT_KEYS.map((key) => {
@@ -471,7 +581,7 @@ function StatsScreen({ state, t, lang }) {
         if (!s) return null;
         return (
           <Panel key={key} title={`${STAT_META[key].label} — ${statName(lang, key)}`} right={<span className="cm-stat-lvl">{t("lvl_short")} {s.value}</span>}>
-            <ProgressBar value={s.exp} max={s.next_level_exp} color={STAT_META[key].color} height={10} />
+            <ProgressBar value={s.exp} max={s.next_level_exp} color={STAT_META[key].color} height={10} theme={theme} />
             <div className="cm-level-caption">{s.exp} / {s.next_level_exp} EXP</div>
           </Panel>
         );
@@ -528,11 +638,35 @@ const TABS = [
 
 export default function App() {
   const [lang, setLangState] = useState(getInitialLang());
+  const [theme, setThemeState] = useState(getInitialTheme());
   const [authUser, setAuthUser] = useState(undefined); // undefined = ещё проверяем сессию
   const [tab, setTab] = useState("home");
   const [state, setState] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [toast, setToast] = useState(null);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const setTheme = useCallback((th) => {
+    setThemeState(th);
+    saveTheme(th);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const triggerInstall = useCallback(async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  }, [installPrompt]);
 
   const t = useCallback(makeT(lang), [lang]);
 
@@ -721,7 +855,7 @@ export default function App() {
   /* ---- RENDER ---- */
   if (authUser === undefined) {
     return (
-      <div className="cm-root cm-loading">
+      <div className="cm-root cm-loading" data-theme={theme}>
         <Flame className="cm-loading-icon" size={28} />
         <div>{t("checking_session")}</div>
       </div>
@@ -729,12 +863,12 @@ export default function App() {
   }
 
   if (!authUser) {
-    return <AuthGate onAuthed={setAuthUser} lang={lang} setLang={setLang} t={t} />;
+    return <AuthGate onAuthed={setAuthUser} lang={lang} setLang={setLang} t={t} theme={theme} setTheme={setTheme} />;
   }
 
   if (loadErr) {
     return (
-      <div className="cm-root cm-loading">
+      <div className="cm-root cm-loading" data-theme={theme}>
         <div>{t("load_error")} {loadErr}</div>
       </div>
     );
@@ -742,7 +876,7 @@ export default function App() {
 
   if (!state) {
     return (
-      <div className="cm-root cm-loading">
+      <div className="cm-root cm-loading" data-theme={theme}>
         <Flame className="cm-loading-icon" size={28} />
         <div>{t("loading_data")}</div>
       </div>
@@ -750,31 +884,30 @@ export default function App() {
   }
 
   return (
-    <div className="cm-root">
+    <div className="cm-root" data-theme={theme}>
       <div className="cm-header">
         <div className="cm-header-title-row">
           <div className="cm-header-title">
             CHALLENGE<span>MAKER</span>
           </div>
-          <LangSwitch lang={lang} onChange={setLang} />
+          <button className="cm-icon-btn" title={t("settings")} onClick={() => setSettingsOpen(true)}>
+            <Settings size={16} />
+          </button>
         </div>
         <div className="cm-header-sub-row">
           <div className="cm-header-sub">{state.user.name} · {t("lvl_short")} {state.user.level}</div>
-          <button className="cm-icon-btn" title={t("sign_out")} onClick={signOut}>
-            <LogOut size={14} />
-          </button>
         </div>
       </div>
 
       <div className="cm-body">
-        {tab === "home" && <HomeScreen state={state} t={t} lang={lang} />}
+        {tab === "home" && <HomeScreen state={state} t={t} lang={lang} theme={theme} />}
         {tab === "quests" && (
           <QuestsScreen state={state} onComplete={completeQuest} onFail={failQuest} onPostpone={postponeQuest} onAdd={addQuest} onDelete={deleteQuest} t={t} lang={lang} />
         )}
         {tab === "challenge" && (
           <ChallengeScreen state={state} onComplete={completeChallenge} onFail={failChallenge} onPostpone={postponeChallenge} onAdd={addChallenge} onDelete={deleteChallenge} t={t} lang={lang} />
         )}
-        {tab === "stats" && <StatsScreen state={state} t={t} lang={lang} />}
+        {tab === "stats" && <StatsScreen state={state} t={t} lang={lang} theme={theme} />}
         {tab === "history" && <HistoryScreen state={state} t={t} lang={lang} />}
       </div>
 
@@ -789,6 +922,19 @@ export default function App() {
           );
         })}
       </div>
+
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        setTheme={setTheme}
+        lang={lang}
+        setLang={setLang}
+        t={t}
+        installPrompt={installPrompt}
+        triggerInstall={triggerInstall}
+        signOut={signOut}
+      />
 
       {toast && (
         <div className={"cm-toast cm-toast-" + toast.tone} key={toast.id}>
